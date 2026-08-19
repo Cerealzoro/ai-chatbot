@@ -16,4 +16,4 @@ PORT=8080 npm start
 
 ## Gemini setup
 
-Set `GEMINI_API_KEY` as a secret environment variable in Render. Do not put the key in this repository or in browser code. The optional `GEMINI_MODEL` variable defaults to `gemini-2.5-flash`.
+Set `GEMINI_API_KEY` as a secret environment variable in Render. Do not put the key in this repository or in browser code. The optional `GEMINI_MODEL` variable defaults to `gemini-3.6-flash`.

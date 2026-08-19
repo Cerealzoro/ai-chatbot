@@ -117,7 +117,7 @@ const server = http.createServer((request, response) => {
       try {
         const { contents } = JSON.parse(body);
         if (!Array.isArray(contents) || contents.length === 0) throw new Error('A chat message is required.');
-        const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const model = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
         const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
