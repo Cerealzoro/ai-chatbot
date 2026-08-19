@@ -87,7 +87,9 @@ const page = `<!doctype html>
     <script>
       function usePrompt(button) { document.getElementById('message-input').value = button.textContent; document.getElementById('message-input').focus(); }
       function newChat() { document.getElementById('conversation').innerHTML = '<div class="welcome"><small>New conversation</small><h1>What shall we explore today?</h1></div>'; document.getElementById('message-input').focus(); }
-      function sendMessage(event) { event.preventDefault(); const input = document.getElementById('message-input'); const text = input.value.trim(); if (!text) return; const message = document.createElement('div'); message.className = 'message user'; message.innerHTML = '<div class="message-body"><strong>You</strong></div><span class="avatar">VD</span>'; message.querySelector('.message-body').append(document.createTextNode(text)); document.getElementById('conversation').append(message); input.value = ''; message.scrollIntoView({ behavior: 'smooth', block: 'end' }); }
+      const chatHistory = [];
+      function addMessage(role, text) { const message = document.createElement('div'); message.className = 'message' + (role === 'user' ? ' user' : ''); const avatar = document.createElement('span'); avatar.className = 'avatar'; avatar.textContent = role === 'user' ? 'VD' : 'O'; if (role !== 'user') avatar.style.background = '#a9e36f'; const body = document.createElement('div'); body.className = 'message-body'; const name = document.createElement('strong'); name.textContent = role === 'user' ? 'You' : 'Orbit'; body.append(name, document.createTextNode(text)); if (role === 'user') message.append(body, avatar); else message.append(avatar, body); document.getElementById('conversation').append(message); message.scrollIntoView({ behavior: 'smooth', block: 'end' }); return body; }
+      async function sendMessage(event) { event.preventDefault(); const input = document.getElementById('message-input'); const send = document.querySelector('.send'); const text = input.value.trim(); if (!text || send.disabled) return; input.value = ''; addMessage('user', text); chatHistory.push({ role: 'user', parts: [{ text }] }); send.disabled = true; send.textContent = '…'; const replyBody = addMessage('model', 'Thinking…'); try { const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: chatHistory }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'The chat request failed.'); const reply = data.reply || 'I could not generate a reply.'; replyBody.innerHTML = '<strong>Orbit</strong>'; replyBody.append(document.createTextNode(reply)); chatHistory.push({ role: 'model', parts: [{ text: reply }] }); } catch (error) { replyBody.innerHTML = '<strong>Orbit</strong>'; replyBody.append(document.createTextNode(error.message)); } finally { send.disabled = false; send.textContent = '↑'; input.focus(); } }
     </script>
   </body>
 </html>`;
@@ -96,6 +98,42 @@ const server = http.createServer((request, response) => {
   if (request.method === 'GET' && request.url === '/') {
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     response.end(page);
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/api/chat') {
+    if (!process.env.GEMINI_API_KEY) {
+      response.writeHead(503, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: 'Gemini is not configured on the server.' }));
+      return;
+    }
+
+    let body = '';
+    request.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 1000000) request.destroy();
+    });
+    request.on('end', async () => {
+      try {
+        const { contents } = JSON.parse(body);
+        if (!Array.isArray(contents) || contents.length === 0) throw new Error('A chat message is required.');
+        const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const geminiResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents })
+        });
+        const data = await geminiResponse.json();
+        if (!geminiResponse.ok) throw new Error(data.error?.message || 'Gemini returned an error.');
+        const reply = data.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('') || '';
+        if (!reply) throw new Error('Gemini returned an empty response.');
+        response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ reply }));
+      } catch (error) {
+        response.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        response.end(JSON.stringify({ error: error.message }));
+      }
+    });
     return;
   }
 
